@@ -85,7 +85,7 @@ class TestStrategy(bt.Strategy):
                 for stock in sell_stock: 
                     data = self.getdatabyname(stock)
                     if self.getposition(data).size > 0: # 如果有持仓
-                        order = self.colse(stock)
+                        order = self.close(data=data) # 平仓
                         self.order_list.append(order) # 记录订单
             # 买入此次调仓的股票 多退少补 调整仓位
             print("-----------对此次调仓的股票进行买入--------------")
