@@ -124,7 +124,7 @@ cerebro.broker.set_slippage_perc(0.0001) # 设置滑点为 0.01%
 '''
 
 # 方式1: 通过 BackBroker 类中的 slip_fixed 参数设置固定滑点
-cerebro.broker = bt.broker.BackBroker(slip_fixed=0.001) # 设置滑点为 0.001
+cerebro.broker = bt.brokers.BackBroker(slip_fixed=0.001) # 设置滑点为 0.001
 
 # 方式2: 通过调用 brokers 的 set_slippage_fixed 方法设置固定滑点
 cerebro.broker.set_slippage_fixed(fixed=0.001)
@@ -165,7 +165,7 @@ slip_limit: 是否对限价单执行滑点;
 
 # 情况1: 
 '''由于 slip_open=False , 不会对开盘价做滑点处理, 所以仍然以原始开盘价 32.63307367 成交'''
-cerebro.brokerset_slippage_fixed(fixed=0.35,
+cerebro.broker.set_slippage_fixed(fixed=0.35,
                    slip_open=False,
                    slip_match=True,
                    slip_out=False)
@@ -176,7 +176,7 @@ cerebro.brokerset_slippage_fixed(fixed=0.35,
 由于允许做价格匹配 slip_match=True, 但不以超出价格区间的价格执行 slip_out=False
 最终以最高价 32.9415 成交
 '''
-cerebro.set_slippage_fixed(fixed=0.35,
+cerebro.broker.set_slippage_fixed(fixed=0.35,
                    slip_open=True,
                    slip_match=True,
                    slip_out=False)
@@ -187,7 +187,7 @@ cerebro.set_slippage_fixed(fixed=0.35,
 允许做价格匹配 slip_match=True, 而且运行以超出价格区间的新成交价执行 slip_out=True
 最终以新成交价 32.98307367 成交
 '''
-cerebro.set_slippage_fixed(fixed=0.35,
+cerebro.broker.set_slippage_fixed(fixed=0.35,
                    slip_open=True,
                    slip_match=True,
                    slip_out=True)
@@ -200,7 +200,7 @@ cerebro.set_slippage_fixed(fixed=0.35,
 再往后的 2019-07-02, 也未执行订单, 下一日 2019-07-03 执行空订单
 即使 2019-07-03的 open 39.96627412+0.35 < high 42.0866713 满足成交条件, 也不会补充成交
 '''
-cerebro.set_slippage_fixed(fixed=0.35,
+cerebro.broker.set_slippage_fixed(fixed=0.35,
                    slip_open=True,
                    slip_match=False,
                    slip_out=True)
@@ -213,11 +213,11 @@ cerebro.set_slippage_fixed(fixed=0.35,
 交易费收取规则--------------------------
 
 - 股票: 目前 A 股的交易费用分为 2 部分: 佣金和印花税, 
-    1.佣金: 双边征收, 不同证券公司收取的佣金各不相同, 一般在 0.02%-0.03% 左右, 单笔佣金不少于 5 元；
+    1.佣金: 双边征收, 不同证券公司收取的佣金各不相同, 一般在 0.02%-0.03% 左右, 单笔佣金不少于 5 元; 
     2.印花税: 只在卖出时收取, 税率为 0.1%。
 
 - 期货: 期货交易费用包括 交易所收取手续费 和 期货公司收取佣金 2 部分, 
-    1.交易所手续费较为固定；
+    1.交易所手续费较为固定; 
     2.不同期货公司佣金不一致, 而且不同期货品种的收取方式不相同, 
         有的按照固定费用收取, 
         有的按成交金额的固定百分比收取: 合约现价*合约乘数*手续费费率
@@ -236,80 +236,414 @@ cerebro.set_slippage_fixed(fixed=0.35,
 
 交易费参数--------------------------
 
-1. commission: 手续费 / 佣金；
-2. mult: 乘数；
+1. commission: 手续费 / 佣金; 
+2. mult: 乘数; 
 3. margin: 保证金 / 保证金比率 。
 4. 双边征收: 买入和卖出操作都要收取相同的交易费用
 '''
 
 # 第3.1节 通过 BackBroker() 设置
 
-# BackBroker 中有一个 commission 参数，用来全局设置交易手续费。
-# 如果是股票交易，可以简单的通过该方式设置交易佣金，但该方式无法满足期货交易费用的各项设置。
+# BackBroker 中有一个 commission 参数, 用来全局设置交易手续费。
+# 如果是股票交易, 可以简单的通过该方式设置交易佣金, 但该方式无法满足期货交易费用的各项设置。
 cerebro.broker = bt.brokers.BackBroker(commission= 0.0002)  # 设置 0.0002 = 0.02% 的手续费
-
 
 # %%
 # 第3.2节 通过 setcommission() 设置
 
-# 如果想要完整又方便的设置交易费用，
-# 可以调用 broker 的 setcommission() 方法，
+# 如果想要完整又方便的设置交易费用, 
+# 可以调用 broker 的 setcommission() 方法, 
 # 该方法基本上可以满足大部分的交易费用设置需求
 
+'''
+从上述各参数的含义和作用可知, 
+margin 、commtype、stocklike 存在 2 种默认的配置规则: 
+- 股票百分比费用、
+- 期货固定费用, 
+具体如下: 
 
+1. 未设置 margin( 即 margin 为 0 / None / False) :
+2. 为 margin 设置了取值 
+->  commtype 会指向 COMM_FIXED 固定费用 
+-> 底层的 _stocklike 属性会设置为 False 
+-> 对应的是“期货固定费用”, 
+因为只有期货才会涉及保证金。
 
+所以如果想为期货设置交易费用, 就需要设置 margin, 
+此外还需令 stocklike=True, margin 参数才会起作用 。
+'''
 
-
-
+cerebro.broker.setcommission(
+    # 交易手续费, 根据 margin 取值区分是百分比还是固定
+    commission=0.0, 
+    # 期货保证金 margin , 决定交易费用类型, 只有在 stocklike=False 时才起作用
+    margin=None, 
+    # 乘数, 盈亏会按该乘数进行放大
+    mult=1.0,
+    # 交易费用计算方式: 取值有
+        # 1. CommInfoBase.COMM_PERC 百分比费用
+        # 2.CommInfoBase.COMM_FIXED 固定费用
+        # 3.None 根据 margin 取值来确定类型
+    commtype=None, 
+    # 当交易费用处于百分比模式下时, commission 是否为 % 形式
+        # True, 表示不以 % 为单位, 0.XX 形式; False, 表示以 % 为单位, XX% 形式
+    percabs=True, 
+    # 计算持有的空头头寸的年化利息
+        # days * price * abs(size) * (interest / 365)
+    stocklike=False, # 是否为股票模式
+    # 计算持有的多头头寸的年化利息
+    interest_long=False, 
+    # 杠杆比率, 交易时按该杠杆调整所需现金
+    leverage=1.0, 
+    # 自动计算保证金
+        # 如果False, 则通过margin参数确定保证金
+        # 如果automargin<0, 通过mult*price确定保证金
+        # 如果automargin>0, 如果automargin*price确定保证金
+    automargin=False, 
+    # 交易费用设置作用的数据集 name (也就是作用的标的)
+        # 如果取值为 None , 则默认作用于所有数据集(也就是作用于所有assets)
+    name=None
+)
 
 # %%
 # 第3.3节 通过 addcommissioninfo() 设置
 
+# 如果想要更灵活的设置交易费用, 
+# 可以在继承 CommInfoBase 基础类的基础上自定义交易费用子类 , 
+# 然后通过 addcommissioninfo() 方法将实例添加进 broker。
 
+'''
+Backtrader 中与交易费用相关的设置都是由 CommInfoBase 类及其子类来完成的, 
+setcommission() 方法中的参数就是 CommInfoBase 类中 params 属性里包含的参数, 
+此外还内置许多 getxxx 方法, 用于计算并返回交易产生的指标:
 
+    - 计算成交量 getsize(price, cash) 
+    - 计算持仓市值 getvalue(position, price)
+    - 计算佣金getcommission(size, price) 或 _getcommission(self, size, price, pseudoexec)
+    - 计算保证金 get_margin(price) 
 
+其中自定义时最常涉及的就是上面案例中显示的 _getcommission 和 get_margin
+'''
+
+# 在继承 CommInfoBase 基础类的基础上自定义交易费用
+class MyCommission(bt.CommInfoBase):
+    ### 对应 setcommission 中介绍的那些参数, 也可以增添新的全局参数
+    # params = (
+    #     (xxx, xxx), 
+    #     (zzz, zzz),
+    # )
+    def _getcommission(self, size, price, pseudoexec): 
+        pass
+    # 自定义佣金计算
+    def get_margin(self, price): 
+        pass
+    # ... 诸如此类
+
+# 实例化
+mycomm = MyCommission() # 参数自定
+cerebro.broker.addcommissioninfo(mycomm, name='xxx') # name 用于指定该交易费用函数适用的标的
 
 # %%
 # 第3.3.1节 自定义交易费用的例子1: 自定义期货百分比费用
 
+# 方法1: 通过 setcommission 实现
+cerebro.broker.setcommission(
+    commission=0.1, # 0.1%\
+    mult=10, # 乘数
+    margin=2000, # 保证金
+    percabs=False, # commission 以 % 为单位
 
+)
 
+# 方法2: 通过 addcommissioninfo 实现
+class CommInfo_Fut_Perc_Mult(bt.CommInfoBase): 
+    params = (
+        ('stocklike', False),  # 指定为期货模式
+        ('commtype', bt.CommInfoBase.COMM_PERC), # 百分比费用 
+        ('percabs', False), # commission 以 % 为单位
+    )
+
+    def _getcommission(self, size, price, pseudoexec):
+        # self.p 就是 当前佣金/费用实例的参数容器, 等价于 self.params
+        return ( abs(size) * price ) * (self.p.commision/100) * self.p.mult
+    
+comminfo = CommInfo_Fut_Perc_Mult(
+    commission = 0.1, 
+    mult = 10,
+    margin = 20000 
+)
+
+cerebro.broker.addcommissioninfo(comminfo=comminfo)
 
 
 # %%
 # 第3.3.2节 自定义交易费用的例子2: 考虑佣金和印花税的股票百分比费用
 
+class StockCommission(bt.CommInfoBase): 
+    params = (
+        ('stocklike', True), 
+        ('commtype', bt.CommInfoBase.COMM_PERC), 
+        ('percabs', True), # commision 不以 % 为单位
+        ('stamp_duty', 0.001), # 印花税默认为 0.1%
+    )
 
+    # 自定义费用计算公式
+    def _getcommission(self, size, price, pseudoexec):
+        # 买入时候只考虑佣金
+        if size > 0: 
+            return ( abs(size) * price ) * self.p.commission
+
+        # 卖出时 考虑 佣金+印花税
+        elif size < 0: 
+            return ( abs(size) * price ) * (self.p.commission + self.p.stamp_duty)
+
+        else: 
+            return 0
 
 
 # %%
 # 第4章 成交量限制管理
 
+'''
+默认地, Broker 在撮合成交单时, 
+不会将订单上的购买数量与成交当天 bar 的总成交量 volume 进行对比, 
+即使购买数量超出了当天该标的的总成交量, 也会按购买数量全部撮合成交。
+
+毫无意外这不合理, 这是“无限流动性”。
+这种“不考虑成交量, 默认全部成交” 地交易模式, 也会使得回测结果与实际交易结果存在较大偏差。
+
+如果想要修改, 可以通过 Backtrader 中的 fillers 模块来限制实际成交量, 
+fillers 会告诉 Broker 在各个成交时间点应该成交多少量, 一共有 3 种形式。
+'''
+
 # 第4.1节 形式1: bt.broker.fillers.FixedSize(size) 
 
+'''
+通过 FixedSize() 方法设置最大的固定成交量: size, 
+- 实际成交量的确定规则: 取( size、订单执行那天的 volume 、订单中要求的成交数量) 中的最小者
+- 如果订单中要求的成交数量无法全部满足, 则只成交部分数量。
+'''
 
+# 方法1: BackBroker()直接设置
+cerebro = bt.Cerebro() 
+filler = bt.broker.fillers.FixedSize(size = 999) # 设置最大成交量
+newbroker = bt.broker.BrokerBack(filler = filler) # 将filler添加到broker中
+cerebro.broker = newbroker
 
+# 方法2: 通过 set_filler 方法设置
+cerebro = bt.Cerebro()
+cerebro.broker.set_filler(bt.broker.fillers.FixedSize(size = 999)) # 设置最大成交量
 
+# # 案例( 部分示例代码) 
+# ......
+# self.order = self.buy(size=2000) # 每次买入 2000 股
+# ......
+# cerebro.broker.set_filler(bt.broker.fillers.FixedSize(size=3000)) # 固定最大成交量
+
+'''
+【输出】===================================================================================
+情况1: 
+2019-01-17 这天执行买入订单, 当天 volume 869.0 < buy(size=2000) < FixedSize(size=3000), 
+所以当天只买入了最小的 volume 869 股, 剩余未成交数量 Remsize: 1131.00 ; 2019-02-22 这天情况类似; 
+
+情况2: 
+2019-03-15 这天执行买入订单, 当天 buy(size=2000) < FixedSize(size=3000)< volume 3063.0, 
+所以可以全部成交, 剩余未成交数量 Remsize: 0; 
+
+情况3: 
+2019-05-20 这天执行卖出订单, 当天 close 平仓时的仓位 2000.0 > volume 1686.0, 无法全部平仓, 
+所以只卖出了 1686 股, 剩余未成交数量 Remsize: -314.00; 
+随后, 在 2019-06-12 再次触发卖出信号, 2019-06-13 执行卖出, 对剩余仓位 341 股 进行了平仓。
+
+【结果】===================================================================================
+1. 对订单执行当天未成交的剩余数量, 并不会在第二天接着成交; 
+
+2. 在订单执行当天, 如果遇到对于无法全部成交的情况, 订单会被部分执行, 然后在第二天取消该订单, 并打印 notify_order: 
+
+    2019-01-16 这一天触发买入信号, 下达订单指令, 创建订单;
+    2019-01-17 订单被传递给 broker, 并由 broker 接受, 然后由于成交量限制, 订单被部分执行;
+    2019-01-18 这天, 剩余订单会被取消, 同时打印 notify_order。
+'''
 
 # %%
 # 第4.2节 形式2: bt.broker.fillers.FixedBarPerc(perc)
+
+# Bar: 按每根 bar (K线)的数据确定固定百分比的交易量
+'''
+通过 FixedBarPerc (Perc) 将 订单执行当天 bar 的总成交量 volume 的 perc % 设置为最大的固定成交量
+1. 订单实际成交量的确定规则: 取 ( volume * perc /100、订单中要求的成交数量) 的最小者; 
+2. 订单执行那天, 如果订单中要求的成交数量无法全部满足, 则只成交部分数量。
+'''
+
+# 方法1: 通过 BackBroker() 类直接设置
+cerebro = bt.Cerebro()
+filler = bt.broker.fillers.FixedBarPerc(perc=0.001)
+newbroker = bt.broker.Brokerback(filler=filler)
+cerebro.broker = newbroker
+
+# 方法2: 通过 set_filler 方法设置
+cerebro = bt.Cerebro()
+cerebro.broker.set_filler(bt.broker.fillers.FixedBarPerc(perc=0.001))
+
+# # 输出案例( 部分示例代码) 
+# ......
+# self.order = self.buy(size=2000) # 以下一日开盘价买入2000股
+# ......
+# cerebro.broker.set_filler(bt.broker.fillers.FixedBarPerc(perc=50)) # perc=50 表示 50%
+
+'''
+【输出】===================================================================================
+情况1: 
+2019-01-17 这天执行买入订单, 订单的buy(size=2000) > 当天 volume 869.0, 只能部分成交, 
+数量为 volume 869.0 * ( 50/100) = 434 , 订单剩余数量 Remsize: 1566.00 不会成交; 2019-02-22 这天情况类似; 
+
+情况2: 
+2019-03-15 这天执行买入订单, 当天 buy(size=2000) < volume 3063.0, 所以可以全部成交, 
+剩余未成交数量 Remsize: 0; 
+
+情况3: 
+2019-04-03 这天执行卖出订单, 当天要 close 平仓的量仓位为 2000.0 , 虽然小于当天的 volume 3826.0, 
+但是大于 volume 3826.0 *( 50/100) = 1913.00, 所以最多只成交了 1913.00, 还剩 Remsize: -87.00 未成交; 
+随后, 在 2019-05-17 再次触发卖出信号, 2019-05-20 剩余仓位 87 进行了平仓。
+'''
 
 
 # %%
 # 第4.3节 形式3: bt.broker.fillers.BarPointPerc(minmov=0.01, perc=100.0)
 
+'''
+BarPointPerc() 在考虑了价格区间的基础上确定成交量, 
+minmov 是 “最小跳动单位”( minimum price movement)  的缩写, 
+即该合约/股票允许的最小价格变动刻度( tick size) 
 
+在订单执行当天, 规则如下: 
 
+1. 通过 minmov 将 当天 bar 的价格区间 low ~ high 进行均匀划分, 得到划分的份数: 
+    part =  (high - low + minmov)  // minmov  ( 向下取整) 
+2. 再对当天 bar 的总成交量 volume 也划分成相同的份数 part , 这样就能得到每份的平均成交量: 
+    volume_per = volume // part 
+3. 最终, volume_per * ( perc / 100) 就是允许的最大成交量, 实际成交时, 对比订单中要求的成交量, 就可以得到最终实际成交量:
+    实际成交量 = min ( volume_per * ( perc / 100) , 订单中要求的成交数量 )
+'''
+
+# 方法1: 通过 BackBroker() 类直接设置
+cerebro = bt.Cerebro()
+filler = bt.broker.fillers.BarPointPerc(minmov=0.01, perc=100.0)
+newbroker = bt.broker.BrokerBack(filler=filler)
+cerebro.broker = newbroker
+
+# 方法2: 通过 set_filler 方法设置
+cerebro = bt.Cerebro()
+cerebro.broker.set_filler( bt.broker.fillers.BarPointPerc(minmov=0.01, perc=100.0) )
+
+'''
+【输出】===================================================================================
+    part = (high 32.94151482 - low 31.83112668 + minmov 0.1) // minmov 0.1 = 12.0
+    volume_per = volume 869.0 // 12.0 = 72.0
+    最终成交数量 = min ( volume_per 72.0 * ( perc 50 / 100) , 订单中要求的成交数量 2000 ) = 36.0
+
+【结果】原计划买入2000股, 结果只能买入36股
+'''
 
 # %%
 # 第5章 交易时机管理
+
+'''
+对于交易订单生成和执行时间, Backtrader 默认是 “当日收盘后下单, 次日以开盘价成交”, 
+这种模式在回测过程中能有效避免使用未来数据。
+
+但对于一些特殊的交易场景, 比如 “all_in” 情况下, 
+当日所下订单中的数量是用当日收盘价计算的( 总资金 / 当日收盘价) , 
+次日以开盘价执行订单时, 如果开盘价比昨天的收盘价提高了, 就会出现可用资金不足的情况。
+
+为了应对一些特殊交易场景, Backtrader 还提供了一些 cheating 式的交易时机模式: 
+- Cheat-On-Open 
+- Cheat-On-Close。
+'''
+
 # 第5.1节 Cheat-On-Open
 
+'''
+Cheat-On-Open: 在下单时, 使用开盘价计算订单中要求的成交数量, 然后在开盘价成交,
 
+在该模式这下, Strategy 中的交易逻辑不再写在 next() 当中
+'''
 
+class TestStrategy(): 
+    def __init__(self):
+
+        self.order = None
+        self.position = None
+        self.crossover = self.data.close > bt.indicators.SMA(self.data.close, period=10)
+        # self.crossover = bt.indicators.CrossOver(self.data.close, bt.indicators.SMA(self.data.close, period=10))
+        
+    def next(self):
+        # 取消未执行订单
+        if self.order:
+            self.cancel(self.order)
+
+        # 检查是否持仓
+        if not self.position: 
+            # 10日均线上穿5日均线, 买入
+            if self.crossover > 0: 
+                print(f'{self.data.datetime.date()} Send Buy, open {self.data.open[0]}')
+                self.order = self.buy(size=100) # 以下一日开盘价买入100股
+        #   # 10日均线下穿5日均线, 卖出
+        elif self.crossover < 0: 
+            self.order = self.close() # 平仓, 以下一日开盘价卖出
+    # ...
+
+# 方法一: 实例化大脑，设定 cheat_on_open 为 True
+cerebro = bt.Cerebro(cheat_on_open=True)
+
+# 方法二: 手动设置当日下单, 以当日开盘价成交 
+cerebro.broker.set_coo(True) # 打开 "Close-Only Order" 模式（简称 COO）
+
+'''
+【结果】===================================================================================
+    1. 原本 2019-01-16 生成的下单指令，被延迟到了 2019-01-17 日才发出；
+    2. 2019-01-17 发出的订单，在 2019-01-17 当日就以 开盘价 执行成交了。
+'''
 
 # %%
 # 第5.2节 Cheat-On-Close
 
+'''
+Cheat-On-Close：当日下单，当日以收盘价成交
 
+在该模式下，Strategy 中的交易逻辑仍写在 next() 中
 
+    方式1：cerebro.broker.set_coc(True)
+    方式2：BackBroker(coc=True)
+'''
+
+class TestStrategy(): 
+    def __init__(self):
+        self.order = None 
+        self.position = None
+        self.crossover = self.data.close > bt.indicators.SMA(self.data.close, period=10)
+    def next(self): 
+        # 取消未执行订单
+        if self.order: 
+            self.cancel(self.order)
+        # 检查是否有持仓
+        if not self.position: 
+        # # 10日均线上穿5日均线, 买入
+            if self.crossover > 0:
+                print(f'{self.data.datetime.date()} Send Buy, close {self.data.close[0]}')
+                self.order = self.buy(size=100) # 以下一日收盘价买入100股
+        # # 10日均线下穿5日均线, 卖出
+        elif self.crossover < 0:
+            self.order = self.close() # 平仓, 以下一日收盘价卖出
+    # ......
+
+# 实例化大脑（不能在这里开启Cheat-On-Close）!!!!!!
+cerebro= bt.Cerebro()
+# .......
+# 当日下单，当日收盘价成交
+cerebro.broker.set_coc(True)
+
+'''
+【结果】===================================================================================
+    2019-01-16 生成的下单指令，当天就被发送，而且当天就以 收盘价 执行了；并未在指令发出的下一日执行。
+'''
