@@ -4,6 +4,30 @@
 
 import pandas as pd 
 import backtrader as bt
+import tushare as ts
+
+import datetime 
+
+token = '251624ebd8ce6534da92c287e3db586b7c54ec71b92cd34468a81042'
+ts.set_token(token) 
+pro = ts.pro_api(token)
+
+def get_data_bytushare(code, start_date, end_date):
+    df = ts.pro_bar(ts_code=code, start_date=start_date, end_date=end_date)
+    df = df[
+        ['trade_date', 'open', 'high', 'low', 'close','vol']
+    ]
+    df.columns = ['trade_date', 'open', 'high', 'low', 'close','volume']
+    df['trade_date'] = pd.to_datetime(df['trade_date'])
+    df.index = df['trade_date']
+    df = df.sort_index(ascending=True)
+    df = df.fillna(0.0)
+    return df
+
+# 恒瑞医药
+data1 = get_data_bytushare('600276.SH','20200101','20211015')
+
+# %%
 
 cerebro = bt.Cerebro()
 
@@ -195,7 +219,7 @@ cerebro.signal_concurrent(True)
 在 Backtrader 中有专门负责回测收益评价指标计算的模块 analyzers, 大家可以将其称为“策略分析器”。
 关于 analyzers 支持内置的指标分析器的具体信息可以参考官方文档 Backtrader ~ Analyzers Reference 。
 
-分析器的使用主要分为 2 步：
+分析器的使用主要分为 2 步: 
 
 1.  通过 addanalyzer(ancls, _name, *args, **kwargs) 方法将分析器添加给大脑, 
     ancls 对应内置的分析器类, 后面是分析器各自支持的参数, 添加的分析器类 ancls 在 cerebro running 区间会被实例化, 
@@ -222,9 +246,9 @@ cerebro.addstrategy(MyStrategy)
 cerebro.addanalyzer(bt.analyzers.AnnualReturn, _name='_AnnualReturn')
 # 计算最大回撤相关指标
 cerebro.addanalyzer(bt.analyzers.DrawDown, _name='_DrawDown')
-# 计算年化收益：日度收益
+# 计算年化收益: 日度收益
 cerebro.addanalyzer(bt.analyzers.Returns, _name='_Returns', tann=252)
-# 计算年化夏普比率：日度收益
+# 计算年化夏普比率: 日度收益
 cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='_SharpeRatio', timeframe=bt.TimeFrame.Days, annualize=True, riskfreerate=0) # 计算夏普比率
 cerebro.addanalyzer(bt.analyzers.SharpeRatio_A, _name='_SharpeRatio_A')
 # 返回收益率时序
@@ -250,9 +274,9 @@ print(result[0].analyzers._SharpeRatio_A.get_analysis())
 analyzer = {}
 # 提取年化收益
 analyzer['年化收益率'] = result[0].analyzers._Returns.get_analysis()['rnorm']
-analyzer['年化收益率（%）'] = result[0].analyzers._Returns.get_analysis()['rnorm100']
+analyzer['年化收益率 (%) '] = result[0].analyzers._Returns.get_analysis()['rnorm100']
 # 提取最大回撤
-analyzer['最大回撤（%）'] = result[0].analyzers._DrawDown.get_analysis()['max']['drawdown'] * (-1)
+analyzer['最大回撤 (%) '] = result[0].analyzers._DrawDown.get_analysis()['max']['drawdown'] * (-1)
 # 提取夏普比率
 analyzer['年化夏普比率'] = result[0].analyzers._SharpeRatio_A.get_analysis()['sharperatio']
 
@@ -272,7 +296,7 @@ class MyAnalyzer(bt.Analyzer):
         '''初始化属性、计算指标'''
         pass
 
-    # analyzer与策略一样，都是从第0根bar开始运行
+    # analyzer与策略一样, 都是从第0根bar开始运行
     # 都会面临 min_period 问题
     # 所以都会通过 prenext、nextstart 来等待 min_period 被满足
 
@@ -324,7 +348,7 @@ class SharpeRatio(bt.Analyzer):
     # 初始化
     def __init__(self): 
         super(SharpeRatio, self).__init__()
-        # 告诉 Python：“请按 方法解析顺序（MRO） 调用 SharpeRatio 的下一个父类 的 __init__ 方法”，确保父类被正确初始化。
+        # 告诉 Python: “请按 方法解析顺序 (MRO)  调用 SharpeRatio 的下一个父类 的 __init__ 方法”, 确保父类被正确初始化。
 
         self.anret = bt.AnnualReturn()
 
@@ -350,3 +374,123 @@ class SharpeRatio(bt.Analyzer):
         self.ratio = retavg / retdev
 
 # %%
+## 第4.3节 添加自定义分析器2
+'''
+下面是在 Backtrader 社区中找到的自定义分析器, 用于查看每笔交易盈亏情况: 
+地址: https://community.backtrader.com/topic/1274/closed-trade-list-including-mfe-mae-analyzer
+该案例涉及到 trade 对象的相关属性, 具体可以参考官方文档: https://www.backtrader.com/docu/trade/
+'''
+
+class trade_list(bt.Analyzer): 
+
+    def __init__(self):
+        self.trade = []
+        self.cumprofit = 0.0 
+    
+    def notify_trade(self, trade): 
+
+        if trade.isclosed: 
+            brokervalue = self.strategy.broker.getvalue()
+
+            dir = 'short'
+            if trade.history[0].event.size > 0: 
+                dir = 'long'
+
+            pricein = trade.history[len(trade.history)-1].status.price 
+            priceout = bt.num2date(trade.history[0].status.dt)
+            dateout = bt.num2date(trade.history[len(trade.history)-1].status.dt)
+            if trade.data._timeframe >= bt.TimeFrame.Days:
+                datein = datein.date()
+                dateout = dateout.date()
+
+            pcntchange = 100 * priceout / pricein - 100
+            pnl = trade.history[len(trade.history)-1].status.pnlcomm
+            pnlpcnt = 100 * pnl / brokervalue
+            barlen = trade.history[len(trade.history)-1].status.barlen
+            pbar = pnl / barlen
+            self.cumprofit += pnl
+
+            size = 0.0
+            value = 0.0
+
+            for record in trade.history:
+                if abs(size) < abs(record.status.size):
+                    size = record.status.size
+                    value = record.status.value
+
+            highest_in_trade = max(trade.data.high.get(ago=0, size=barlen+1))
+            lowest_in_trade = min(trade.data.low.get(ago=0, size=barlen+1))
+            hp = 100 * (highest_in_trade - pricein) / pricein
+            lp = 100 * (lowest_in_trade - pricein) / pricein
+
+            if dir == 'long':
+                mfe = hp
+                mae = lp
+
+            if dir == 'short':
+                mfe = -lp
+                mae = -hp
+
+            self.trades.append( 
+                { 
+                'ref': trade.ref,
+                'ticker': trade.data._name,
+                'dir': dir,
+                'datein': datein,
+                'pricein': pricein,
+                'dateout': dateout,
+                'priceout': priceout,
+                'chng%': round(pcntchange, 2),
+                'pnl': pnl, 'pnl%': round(pnlpcnt, 2),
+                'size': size,
+                'value': value,
+                'cumpnl': self.cumprofit,
+                'nbars': barlen, 'pnl/bar': round(pbar, 2),
+                'mfe%': round(mfe, 2), 'mae%': round(mae, 2)
+                }
+            )
+# %%
+
+# 第5章 如何对策略进行参数优化
+'''
+如果策略的收益表现可能受相关参数的影响, 需要验证比较参数不同取值对策略表现的影响, 
+就可以使用 Backtrader 的参数优化功能, 使用该功能只需通过 cerebro.optstrategy() 方法往大脑添加策略即可。
+
+cerebro.optstrategy(strategy, *args, **kwargs): 
+    strategy 就是自定义的策略类 (比如例子的TestStrategy) 
+    后面*args, **kwargs 对应自定义策略类中 params 中的需要优化的参数的取值
+     (比如例子的period1=range(5, 25, 5), period2=range(10, 41, 10)) 
+    当有多个参数时, 会将各个参数的各个取值进行一一匹配 (见上面的输出结果) ; 
+
+在进行参数优化时, 实例化大脑的时候, 有 2 个与参数优化相关的参数: 
+    optdatas=True: 在处理数据时会采用相对节省时间的方式, 进而提高优化速度; 
+    optreturn=True: 在返回回测结果时, 为了节省时间, 只返回与参数优化最相关的内容 (params 和 analyzers) , 
+                    而不会返回参数优化不关心的数据 (比如 datas, indicators, observers …等) ; 
+    参数优化是基于 multiprocessing 进行多进程处理数据和分析结果的。
+
+注意: 在对于多个标的进行参数优化过程中 (比如连续对1000个股票的均线策略寻优) , 
+      如果对于多进程的cpu使用数量不加限制, 会有一定几率出现异常错误的情况, 
+      这类错误目前还没找到解决方法。建议是限制cpu的数量, 如设置为2或3: 
+      cerebro.run(maxcpus=2)
+'''
+
+class TestStrategy(bt.Strategy): 
+
+    params = (
+        ('period1', 5), 
+        ('period2', 10), 
+    )
+
+    pass 
+
+cerebro1 = bt.Cerebro(optdatas=True, optreturn=True)
+
+# 初始资金
+cerebro1.broker.setcash(10000000) 
+
+# 加载数据 
+datafeed1 = bt.feeds.PandasData( 
+    dataname = data1, 
+    fromdate=datetime.datetime(2010, 1, 1), 
+    todate=datetime.datetime(2020, 12, 31)
+)
