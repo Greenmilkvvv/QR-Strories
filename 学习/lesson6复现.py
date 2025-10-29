@@ -184,13 +184,13 @@ class MySignal(bt.Indicator):
         ('period', 30),
     )
     def __init__(self):
-        self.lines.signal = self.data - bt.indicator.SMA(period=self.params.period) > 0
+        self.lines.signal = self.data - bt.indicators.SMA(period=self.params.period) > 0
 
 
 # 实例化大脑
 cerebro = bt.Cerebro()
 # 加载数据
-data = bt.feeds.PandasData(dataname='mydataname')
+data = bt.feeds.PandasData(dataname=data1)
 cerebro.adddata(data)
 # 添加交易信号
 cerebro.add_signal(bt.SIGNAL_LONGSHORT, MySignal, period=10)
@@ -494,3 +494,10 @@ datafeed1 = bt.feeds.PandasData(
     fromdate=datetime.datetime(2010, 1, 1), 
     todate=datetime.datetime(2020, 12, 31)
 )
+cerebro1.adddata(datafeed1, name='699466.SH') 
+
+# 添加优化器 
+cerebro1.optstrategy(TestStrategy, period1=range(5, 25, 5), period2=range(10, 41, 10))
+
+
+
