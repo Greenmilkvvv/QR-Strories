@@ -8,7 +8,7 @@ import tushare as ts
 
 import datetime 
 
-token = '251624ebd8ce6534da92c287e3db586b7c54ec71b92cd34468a81042'
+token = 'ac13756ac0fe98af0c1bcd64738bad560ba5a0ab42bfcc9ffc1d62f3'
 ts.set_token(token) 
 pro = ts.pro_api(token)
 
