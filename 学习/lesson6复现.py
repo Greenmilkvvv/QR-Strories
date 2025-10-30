@@ -497,7 +497,23 @@ datafeed1 = bt.feeds.PandasData(
 cerebro1.adddata(datafeed1, name='699466.SH') 
 
 # 添加优化器 
-cerebro1.optstrategy(TestStrategy, period1=range(5, 25, 5), period2=range(10, 41, 10))
+cerebro1.optstrategy(
+    TestStrategy, 
+    period1=range(5, 25, 5), 
+    period2=range(10, 41, 10)
+)
 
+# 添加分析指标 
+# 返回年初至年末的年度收益率 
+cerebro1.addanalyzer(bt.analyzers.AnnualReturn, _name='_AnnualReturn') 
+# 计算最大回撤相关指标
+cerebro1.addanalyzer(bt.analyzers.DrawDown, _name='_DrawDown')
+# 计算年化收益
+cerebro1.addanalyzer(bt.analyzers.Returns, _name='_Returns', tann=252)
+# 计算年化夏普比率
+cerebro1.addanalyzer(bt.analyzers.SharpeRatio_A, _name='_SharpeRatio_A')
+# 返回收益率时序
+cerebro1.addanalyzer(bt.analyzers.TimeReturn, _name='_TimeReturn')
 
-
+# 启动回测
+result = cerebro1.run()
