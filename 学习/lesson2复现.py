@@ -7,7 +7,7 @@ import datetime
 
 import tushare as ts
 
-token = '251624ebd8ce6534da92c287e3db586b7c54ec71b92cd34468a81042'
+token = 'fafd20e987c770affb0211e3661fa01beccae1d40c135c2340aae5bb'
 ts.set_token(token) 
 pro = ts.pro_api(token)
 
@@ -104,65 +104,68 @@ result = cerebro.run()
         
 # 第3节: 提取 line 上的数据点, 使用 get(ago,size) 切片函数
 
-# class TestStrategy(bt.Strategy):
-#     def __init__(self):
-#         self.count = 0 # 用于计算next的循环次数
-#         # 打印数据集和数据集对应的名称
-#         print("------------- init 中的索引位置-------------")
-#         # 对 datetime 线进行索引时, xxx.date(X) 可以直接以“xxxx-xx-xx xx:xx:xx”的形式返回, X 就是索引位置, 可以看做是传统 [X] 索引方式的改进版 
-#         print("0 索引: ",'datetime', self.data1.lines.datetime.date(0), 'close', self.data1.lines.close[0])
-#         print("-1 索引: ",'datetime', self.data1.lines.datetime.date(-1),'close', self.data1.lines.close[-1])
-#         print("-2 索引",'datetime', self.data1.lines.datetime.date(-2),'close', self.data1.lines.close[-2])
-#         print("1 索引: ",'datetime',self.data1.lines.datetime.date(1),'close', self.data1.lines.close[1])
-#         print("2 索引",'datetime', self.data1.lines.datetime.date(2),'close', self.data1.lines.close[2])
-#         # 通过 get() 切片时, 如果是从 ago=0 开始取, 不会返回数据, 从其他索引位置开始取, 能返回数据
+class TestStrategy(bt.Strategy):
+    def __init__(self):
+        """
+        初始化方法，用于初始化对象属性并进行数据集的索引和切片操作演示
+        """
+        self.count = 0 # 用于计算next的循环次数
+        # 打印数据集和数据集对应的名称
+        print("------------- init 中的索引位置-------------")
+        # 对 datetime 线进行索引时, xxx.date(X) 可以直接以“xxxx-xx-xx xx:xx:xx”的形式返回, X 就是索引位置, 可以看做是传统 [X] 索引方式的改进版 
+        print("0 索引: ",'datetime', self.data1.lines.datetime.date(0), 'close', self.data1.lines.close[0])
+        print("-1 索引: ",'datetime', self.data1.lines.datetime.date(-1),'close', self.data1.lines.close[-1])
+        print("-2 索引",'datetime', self.data1.lines.datetime.date(-2),'close', self.data1.lines.close[-2])
+        print("1 索引: ",'datetime',self.data1.lines.datetime.date(1),'close', self.data1.lines.close[1])
+        print("2 索引",'datetime', self.data1.lines.datetime.date(2),'close', self.data1.lines.close[2])
+        # 通过 get() 切片时, 如果是从 ago=0 开始取, 不会返回数据, 从其他索引位置开始取, 能返回数据
 
-#         print("从 0 开始往前取3天的收盘价: ", self.data1.lines.close.get(ago=0, size=3))
-#         print("从-1开始往前取3天的收盘价: ", self.data1.lines.close.get(ago=-1, size=3))
-#         print("从-2开始往前取3天的收盘价: ", self.data1.lines.close.get(ago=-2, size=3))
-#         print("line的总长度: ", self.data1.buflen())
+        print("从 0 开始往前取3天的收盘价: ", self.data1.lines.close.get(ago=0, size=3))
+        print("从-1开始往前取3天的收盘价: ", self.data1.lines.close.get(ago=-1, size=3))
+        print("从-2开始往前取3天的收盘价: ", self.data1.lines.close.get(ago=-2, size=3))
+        print("line的总长度: ", self.data1.buflen())
 
-#     def next(self):
-#         print(f"------------- next 的第{self.count+1}次循环 --------------")
+    def next(self):
+        print(f"------------- next 的第{self.count+1}次循环 --------------")
 
-#         print("当前时点: ", 
-#               'datetime', self.data1.lines.datetime.date(0), 
-#               'close', self.data1.lines.close[0]
-#               )
+        print("当前时点: ", 
+              'datetime', self.data1.lines.datetime.date(0), 
+              'close', self.data1.lines.close[0]
+              )
         
-#         print("往前推1天(昨日): ", 
-#               'datetime',self.data1.lines.datetime.date(-1), 
-#               'close', self.data1.lines.close[-1] 
-#               )
+        print("往前推1天(昨日): ", 
+              'datetime',self.data1.lines.datetime.date(-1), 
+              'close', self.data1.lines.close[-1] 
+              )
         
-#         print("往前推2天(前日)", 
-#               'datetime',self.data1.lines.datetime.date(-2), 
-#               'close', self.data1.lines.close[-2]
-#               )
+        print("往前推2天(前日)", 
+              'datetime',self.data1.lines.datetime.date(-2), 
+              'close', self.data1.lines.close[-2]
+              )
         
-#         print("前日、昨日、今日的收盘价: ", 
-#               self.data1.lines.close.get(ago=0, size=3)
-#               )
+        print("前日、昨日、今日的收盘价: ", 
+              self.data1.lines.close.get(ago=0, size=3)
+              )
         
-#         print("往后推1天(明日): ", 
-#               'datetime',self.data1.lines.datetime.date(1), 
-#               'close', self.data1.lines.close[1]
-#               )
+        print("往后推1天(明日): ", 
+              'datetime',self.data1.lines.datetime.date(1), 
+              'close', self.data1.lines.close[1]
+              )
         
-#         print("往后推2天(明后日)", 
-#               'datetime', self.data1.lines.datetime.date(2), 
-#               'close', self.data1.lines.close[2]
-#               )
+        print("往后推2天(明后日)", 
+              'datetime', self.data1.lines.datetime.date(2), 
+              'close', self.data1.lines.close[2]
+              )
         
-#         # 在 next() 中调用 len(self.data0), 返回的是当前已处理(已回测)的数据长度, 会随着回测的推进动态增长
-#         print("已处理的数据点: ", len(self.data1))
+        # 在 next() 中调用 len(self.data0), 返回的是当前已处理(已回测)的数据长度, 会随着回测的推进动态增长
+        print("已处理的数据点: ", len(self.data1))
 
-#         # buflen() 返回整条线的总长度, 固定不变；
-#         print("line的总长度: ", self.data0.buflen())
-#         self.count += 1
+        # buflen() 返回整条线的总长度, 固定不变；
+        print("line的总长度: ", self.data0.buflen())
+        self.count += 1
 
-# cerebro.addstrategy(TestStrategy)
-# result = cerebro.run()
+cerebro.addstrategy(TestStrategy)
+result = cerebro.run()
 
 # %%
 
