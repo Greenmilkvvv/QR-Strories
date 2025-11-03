@@ -10,6 +10,7 @@
 import pandas as pd 
 import backtrader as bt
 import akshare as ak
+# import tushare as ts
 import matplotlib.pyplot as plt
 
 cerebro = bt.Cerebro()
@@ -21,7 +22,7 @@ cerebro = bt.Cerebro()
 相比之下, 创业板50ETF主要反映的是小盘成长股的走势, 其成份股主要是市值较小、成长性较强的创新型企业。小盘股的投资特点是高风险、高收益。
 
 - akshare api: 
-- k.etf_fund_daily(symbol='510050', period='daily',
+- ak.etf_fund_daily(symbol='510050', period='daily',
                 start_date=START, end_date=END, adjust='qfq')
 
                 
@@ -36,19 +37,16 @@ cerebro = bt.Cerebro()
 # 1. 数据获取
 
 def get_data(symbol, start): 
-    df = ak.fund_etf_hist_em(
-        symbol=symbol, 
-        adjust='qfq', 
-        start_date=start
-    )
+
+    df = ak.fund_etf_hist_em(symbol=symbol, start_date=start,  adjust='qfq')
     df = df[['日期', '开盘', '最高', '最低', '收盘', '成交量']]
     df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
     df['date'] = pd.to_datetime(df['date']) 
     df.set_index('date', inplace=True) 
     return df 
 
-SZ50_ETF = get_data(symbol='510050', start='20160722')
-CYB50_ETF = get_data(symbol='159949', start='20160722')
+SZ50_ETF = get_data(symbol='510050', start='20190722')
+CYB50_ETF = get_data(symbol='159949', start='20190722')
 
 datafeeds1 = bt.feeds.PandasData(dataname = SZ50_ETF, name = 'SZ50_ETF')
 datafeeds2 = bt.feeds.PandasData(dataname = CYB50_ETF, name = 'CYB50_ETF')
@@ -69,18 +67,19 @@ class MomentumIndicator(bt.Indicator):
         ('target_period', 20), # 默认使用 MA20  
     )
 
-    def __init__(self, data, **kwargs): 
-        super().__init__(data, **kwargs)
-        self.addminperiod(self.params.target_period) # 预先分配空间 (避免回测时反复分配空间)
+    def __init__(self): 
+        super().__init__() 
+        sma = bt.ind.SMA(self.data.close, period=self.params.target_period) 
+        self.lines.momentum = self.data.close / sma - 1.0
 
-    def next(self): 
-        # 计算指标
-        # close / MA20 -1
-        close = self.data.close[0]
-        ma20 = sum(self.data.close.get(ago=0, size = self.params.target_period)) / self.params.target_period
+    # def next(self): 
+    #     # 计算指标
+    #     # close / MA20 -1
+    #     close = self.data.close[0]
+    #     ma20 = sum(self.data.close.get(ago=0, size = self.params.target_period)) / self.params.target_period
 
-        self.lines.momentum[0] = close / ma20 - 1
-        # self.lines.momentum[0] = self.data.close[0] / self.data.close.get(ago=0, size = self.params.target_period) - 1
+    #     self.lines.momentum[0] = close / ma20 - 1
+    #     # self.lines.momentum[0] = self.data.close[0] / self.data.close.get(ago=0, size = self.params.target_period) - 1
 
 # %%
 
@@ -99,13 +98,8 @@ class ETFMomentumStrategy(bt.Strategy):
     def __init__(self): 
         # 创建 dict 给两个股票生成指标
         self.sig = {}
-        for d in self.datas:
-            code = d._name 
-            momentum = MomentumIndicator( 
-                data=d, 
-                target_period = self.params.target_period
-            )
-            self.sig[code] = momentum
+        self.sig['SZ50_ETF'] = MomentumIndicator(self.getdatabyname('SZ50_ETF'))
+        self.sig['CYB50_ETF'] = MomentumIndicator(self.getdatabyname('CYB50_ETF'))
 
     def next(self):
 
