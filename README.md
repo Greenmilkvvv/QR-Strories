@@ -1,5 +1,7 @@
 # QR-Stories
 
-量化研究是使用数学模型和统计方法来分析市场数据，以预测未来的价格走势。量化研究可以帮助投资者更好地理解市场，做出更明智的投资决策。
+- Quant research is the use of mathematical models and statistical methods to analyze market data to predict future price trends. Quants are believed to understand the market more profoundly and make more informed investment decisions.
 
-量化一切可量化的风险，在不确定的市场中寻求统计规律。这是一个相对纯粹的领域。
+- Quantify all quantifiable risks, seek for statistical laws in the uncertain market and keep balance between **complex** mathematics and **simple** market logic.
+
+- This is a relatively **pure** field. That's why I'm attracted.
