@@ -45,8 +45,8 @@ def get_data(symbol, start):
     df.set_index('date', inplace=True) 
     return df 
 
-SZ50_ETF = get_data(symbol='510050', start='20190722')
-CYB50_ETF = get_data(symbol='159949', start='20190722')
+SZ50_ETF = get_data(symbol='510050', start='20240722')
+CYB50_ETF = get_data(symbol='159949', start='20240722')
 
 datafeeds1 = bt.feeds.PandasData(dataname = SZ50_ETF, name = 'SZ50_ETF')
 datafeeds2 = bt.feeds.PandasData(dataname = CYB50_ETF, name = 'CYB50_ETF')
@@ -91,6 +91,9 @@ class ETFMomentumStrategy(bt.Strategy):
     params = (
         ('size_pct', 0.95), # 仓位默认95%
         ('target_period', 20), # 默认使用 MA20
+        ('min_signal_diff', 0.001), # 最小信号差异阈值
+        ('min_signal_value', 0.000), # 最小信号绝对值阈值
+        ('lost_size', 100), # 每手一百份
     )
 
     # 初始化
@@ -100,37 +103,115 @@ class ETFMomentumStrategy(bt.Strategy):
         self.sig = {}
         self.sig['SZ50_ETF'] = MomentumIndicator(self.getdatabyname('SZ50_ETF'))
         self.sig['CYB50_ETF'] = MomentumIndicator(self.getdatabyname('CYB50_ETF'))
+        
+        # 记录当前持有的 ETF 
+        self.current_etf = None # None "SZ50_ETF" "CYB50_ETF"
 
     def next(self):
+
+        d1, d2 = self.getdatabyname('SZ50_ETF'), self.getdatabyname('CYB50_ETF')
 
         # 对两只股票联合判断
         signal_sz50 = self.sig['SZ50_ETF'][0] # 上证50 
         signal_cyb50 = self.sig['CYB50_ETF'][0] # 创业板50
 
+        # 获取持仓状况
+        pos_sz =self.getposition( self.getdatabyname('SZ50_ETF') ).size
+        pos_cyb = self.getposition(self.getdatabyname('CYB50_ETF')).size
+
         # 若都小于0则清仓
         if signal_sz50 < 0 and signal_cyb50 < 0:
-            # 清仓
-            for d in self.datas:
-                self.close(data=d)
+            if self.current_etf is not None: 
+                self.log( 
+                    f"清仓条件触发两个信号都小于0 (SZ50:{signal_sz50:.4f}, CYB50:{signal_cyb50:.4f})"                
+                )
+                
+                # 关于 SZ50_ETF 的仓位判断
+                if pos_sz > 0:
+                    # d = self.getdatabyname('SZ50_ETF')
+                    self.order = self.order_target_size(d1, target=0)
+                    self.log(f"卖出 {d1._name} {pos_sz} 份")
+
+                # 关于 CYB50_ETF 的仓位判断
+                if pos_cyb > 0:
+                    # d = self.getdatabyname('CYB50_ETF')
+                    self.order = self.order_target_size(d2, target=0)
+                    self.log(f"卖出 {d2._name} {pos_cyb} 份")
+
+                # 更新持仓状况
+                self.current_etf = None
 
 
-         # 买入大于0时两者中较高者
-        elif signal_sz50 > signal_cyb50:
-            self.order = self.order_target_percent(
-                data = self.getdatabyname('SZ50_ETF'), 
-                target = self.params.size_pct
-            ) # 上证50ETF
 
-        elif signal_sz50 < signal_cyb50:
-            self.order = self.order_target_percent(
-                data = self.getdatabyname('CYB50_ETF'), 
-                target = self.params.size_pct
-            ) # 创业板50ETF
+        # 情况2：应该持有 SZ50_ETF
+        elif (signal_sz50 > self.params.min_signal_value) and (signal_sz50 -signal_cyb50 > self.params.min_signal_diff):
 
-        print(self.datetime.date(0),
-              'sz50', signal_sz50, 'cyb50', signal_cyb50,
-              'pos_sz', self.getposition(self.getdatabyname('SZ50_ETF')).size,
-              'pos_cyb', self.getposition(self.getdatabyname('CYB50_ETF')).size)
+            if self.current_etf != 'SZ50_ETF':
+                self.log(
+                    f"买入条件触发 SZ50_ETF (SZ50:{signal_sz50:.4f} > CYB50:{signal_cyb50:.4f})"
+                )
+                
+                # 先平掉其他持仓
+                if pos_cyb > 0:
+                    self.order_target_size(data=d2, target=0)
+                    self.log(f"卖出 {d2._name} {pos_cyb} 份")
+
+                # 计算买入SZ50_ETF的数量
+                cash = self.broker.get_cash()
+                price = d1.close[0]
+
+                # 按100份取整计算买入数量
+                target_value = cash * self.params.size_pct
+                target_shares = int(target_value / price)
+                target_shares = (target_shares // 100) * 100
+                
+                # 下单
+                self.order_target_size(data=d1, target=target_shares)
+
+                # 日志
+                self.log(f"买入SZ50: {target_shares}股, 价格: {price:.3f}, 金额: {target_shares * price:.2f}")
+
+                # 更新当前持仓
+                self.current_etf = 'SZ50_ETF'
+
+
+
+        # 情况3：应该持有 CYB50_ETF
+        elif (signal_cyb50 > self.params.min_signal_value) and (signal_cyb50 - signal_sz50 > self.params.min_signal_diff):
+
+            if self.current_etf != 'CYB50_ETF':
+                self.log(
+                    f"买入条件触发 CYB50_ETF (CYB50:{signal_cyb50:.4f} > SZ50:{signal_sz50:.4f})"
+                )
+
+                # 先平掉其他持仓
+                if pos_sz > 0:
+                    self.order_target_size(data=d1, target=0)
+                    self.log(f"卖出 {d1._name} {pos_sz} 份")
+
+                # 计算买入CYB50_ETF的数量
+                cash = self.broker.get_cash()
+                price = d2.close[0]
+
+                # 按100份取整计算买入数量
+                target_value = cash * self.params.size_pct
+                target_shares = int(target_value / price)
+                target_shares = (target_shares // 100) * 100
+
+                # 下单
+                self.order_target_size(data=d2, target=target_shares)
+
+                # 日志
+                self.log(f"买入CYB50: {target_shares}股, 价格: {price:.3f}, 金额: {target_shares * price:.2f}")
+
+                # 更新当前持仓
+                self.current_etf = 'CYB50_ETF'
+
+
+
+        # 情况4：两个都大于 0 , 但是差距太小 不生成信号 保持不变
+        elif (signal_sz50 > self.params.min_signal_value) and (signal_cyb50 > self.params.min_signal_value) and (signal_sz50 - signal_cyb50 < self.params.min_signal_diff):
+            pass
 
 cerebro.addstrategy(ETFMomentumStrategy)
 
@@ -138,8 +219,8 @@ cerebro.addstrategy(ETFMomentumStrategy)
 
 # 4. 交易管理 
 
-## 滑点 百分比 0.1%
-cerebro.broker.set_slippage_perc(0.001) 
+## 滑点 百分比 0.0 因为资金量较小
+cerebro.broker.set_slippage_perc(0.0) 
 
 ## 佣金 万三 + 最低 5 元（双向）
 cerebro.broker.setcommission( 
@@ -196,4 +277,11 @@ print(f"总收益: {ret['rtot']*100:.2f}%")
 # %%
 
 # 画图（可选）
-# cerebro.plot(style='candlestick', barup='red', bardown='green')
+cerebro.plot(style='line', barup='red', bardown='green', plotlinetrades=False)
+# fig = figs[0][0]
+
+# fig.savefig('ETF轮动策略.png', dpi=300)
+# print('已保存为 result.png')
+
+# %%
+

@@ -45,19 +45,24 @@ def get_ak_data(symbol: str, start: str, end: str) -> pd.DataFrame :
     df.set_index('date', inplace=True) 
     return df 
 
-CODEs = ['300750', '002594', '000858', '600036']   # 宁德、比亚迪、五粮液、招行
-START = '20200101'
-END = '20231231'
-CASH = 100_000 
+# CODEs = ['300750', '002594', '000858', '600036']   # 宁德、比亚迪、五粮液、招行
+CODE = '000400' # 许继电气
+START = '20230701'
+END = '20251031'
+CASH = 100_000_000 
 
-for CODE in CODEs:
-    df = get_ak_data(CODE, START, END) 
-    datafeed = bt.feeds.PandasData(dataname=df)
-    cerebro.adddata(datafeed, name=CODE)
+# for CODE in CODEs:
+#     df = get_ak_data(CODE, START, END) 
+#     datafeed = bt.feeds.PandasData(dataname=df)
+#     cerebro.adddata(datafeed, name=CODE)
+
+df = get_ak_data(CODE, START, END)
+datafeed = bt.feeds.PandasData(dataname=df)
+cerebro.adddata(datafeed, name=CODE)
 
 # %% 
 
-# 2. 自定义指标 手工双均线 (不使用 bt.ind.SMA )
+# 2. 自定义指标 双均线 
 
 class MyDMA(bt.Indicator): 
     '''手工双均线''' 
@@ -73,13 +78,8 @@ class MyDMA(bt.Indicator):
         # 预先分配空间 (避免回测时反复分配空间) 
         self.addminperiod(self.params.slow)
 
-    def next(self): 
-        # 手工算均值 
-        fast_avg = sum( self.data.close.get(ago=-i, size=1)[0] for i in range(self.params.fast) ) / self.params.fast 
-        slow_avg = sum( self.data.close.get(ago=-i, size=1)[0] for i in range(self.params.slow) ) /self.params.slow
-
-        self.lines.ma_fast[0] = fast_avg 
-        self.lines.ma_slow[0] = slow_avg
+        self.lines.ma_fast = bt.ind.SMA(self.data.close, period=self.p.fast)
+        self.lines.ma_slow = bt.ind.SMA(self.data.close, period=self.p.slow)
 
 # %% 
 
@@ -92,54 +92,38 @@ class DMAStrategy(bt.Strategy):
         ('slow', 60), 
     )
 
-    # def __init__(self): 
-
-    #     self.dma = MyDMA( 
-    #         self.data, 
-    #         fast = self.params.fast, 
-    #         slow = self.params.slow
-    #     ) 
-
-    #     self.signal = bt.ind.CrossOver( 
-    #         self.dma.lines.ma_fast, 
-    #         self.dma.lines.ma_slow
-    #     )
-
-    # def next(self): 
-    #     # 头寸管理 
-
-    #     if self.signal > 0: # 金叉 做多
-    #         self.order = self.order_target_percent(target = self.params.size_pct)
-
-    #     elif self.signal < 0: # 死叉 不做空
-    #         self.order = self.order_target_percent(target = 0)
-
     def __init__(self):
         # 为每只股票预生成指标，存到 dict 里
         self.sig = {}
         for d in self.datas:   # self.datas 是列表，顺序同 adddata 顺序
             code = d._name
             dma = MyDMA(d, fast=self.p.fast, slow=self.p.slow)
-            cross = bt.ind.CrossOver(dma.ma_fast, dma.ma_slow)
+            cross = bt.ind.CrossOver(dma.lines.ma_fast, dma.lines.ma_slow)  # ← 只用这一行
             self.sig[code] = cross
 
     def next(self):
         # 对每只股票独立判断
         for d in self.datas:
             code = d._name
-            signal = self.sig[code][0]   # 当前信号
+            signal = self.sig[code][0]
             pos = self.getposition(d).size
 
-            if signal > 0 and not pos:   # 金叉且无仓 → 做多
-                self.order_target_percent(data=d, target=self.p.size_pct)
-            elif signal < 0 and pos:     # 死叉且有仓 → 平仓
-                self.order_target_percent(data=d, target=0)
+            # 动态计算能买的股数 按照 100股 (一手) 来计算
+            cash = self.broker.getcash()
+            price = d.close[0]
+            max_shares = int(cash / price / 100) * 100   # 向下取整到 100 倍数
+
+            if signal == 1 and pos == 0: # 金叉 做多
+                self.order_target_size(d, target=max_shares, exectype=bt.Order.Close)
+            elif signal == -1 and pos != 0: # 死叉 清仓
+                self.order_target_size(d, target=0)
 
             # 调试用，跑通后注释
-            print(d.datetime.date(0), code,
-                  'close', d.close[0],
-                  'signal', signal,
-                  'pos', pos)
+            if signal != 0:
+                print(d.datetime.date(0), code,
+                    'close', d.close[0],
+                    'signal', signal,
+                    'pos', pos)
  
 cerebro.addstrategy(DMAStrategy)
 
@@ -147,8 +131,11 @@ cerebro.addstrategy(DMAStrategy)
 
 # 4. 交易管理 
 
-## 滑点 百分比 0.1%
-cerebro.broker.set_slippage_perc(0.001) 
+## 成交模式: 日度回测默认 Bar 开盘成交
+cerebro.broker.set_coo(True)
+
+## 滑点 设置为0 资金量并不大
+cerebro.broker.set_slippage_perc(0) 
 
 ## 佣金 万三 + 最低 5 元（双向）
 cerebro.broker.setcommission( 
@@ -157,13 +144,10 @@ cerebro.broker.setcommission(
 )
 
 
-## 成交模式: 日度回测默认 Bar 开盘成交
-cerebro.broker.set_coo(True)
-
 ## 最大成交量
-cerebro.broker.set_filler(
-    bt.broker.fillers.FixedBarPerc(perc=0.001)
-)
+# cerebro.broker.set_filler(
+#     bt.broker.fillers.FixedBarPerc(perc=0.001)
+# )
 
 # %%
 
@@ -205,4 +189,4 @@ print(f"总收益: {ret['rtot']*100:.2f}%")
 # %%
 
 # 画图（可选）
-cerebro.plot(style='candle', barup='red', bardown='green')
+cerebro.plot(style='line', barup='red', bardown='green')
