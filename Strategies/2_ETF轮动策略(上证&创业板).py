@@ -122,7 +122,7 @@ class ETFMomentumStrategy(bt.Strategy):
         # 若都小于0则清仓
         if signal_sz50 < 0 and signal_cyb50 < 0:
             if self.current_etf is not None: 
-                self.log( 
+                print( 
                     f"清仓条件触发两个信号都小于0 (SZ50:{signal_sz50:.4f}, CYB50:{signal_cyb50:.4f})"                
                 )
                 
@@ -130,13 +130,13 @@ class ETFMomentumStrategy(bt.Strategy):
                 if pos_sz > 0:
                     # d = self.getdatabyname('SZ50_ETF')
                     self.order = self.order_target_size(d1, target=0)
-                    self.log(f"卖出 {d1._name} {pos_sz} 份")
+                    print(f"卖出 {d1._name} {pos_sz} 份")
 
                 # 关于 CYB50_ETF 的仓位判断
                 if pos_cyb > 0:
                     # d = self.getdatabyname('CYB50_ETF')
                     self.order = self.order_target_size(d2, target=0)
-                    self.log(f"卖出 {d2._name} {pos_cyb} 份")
+                    print(f"卖出 {d2._name} {pos_cyb} 份")
 
                 # 更新持仓状况
                 self.current_etf = None
@@ -147,14 +147,14 @@ class ETFMomentumStrategy(bt.Strategy):
         elif (signal_sz50 > self.params.min_signal_value) and (signal_sz50 -signal_cyb50 > self.params.min_signal_diff):
 
             if self.current_etf != 'SZ50_ETF':
-                self.log(
+                print(
                     f"买入条件触发 SZ50_ETF (SZ50:{signal_sz50:.4f} > CYB50:{signal_cyb50:.4f})"
                 )
                 
                 # 先平掉其他持仓
                 if pos_cyb > 0:
                     self.order_target_size(data=d2, target=0)
-                    self.log(f"卖出 {d2._name} {pos_cyb} 份")
+                    print(f"卖出 {d2._name} {pos_cyb} 份")
 
                 # 计算买入SZ50_ETF的数量
                 cash = self.broker.get_cash()
@@ -169,7 +169,7 @@ class ETFMomentumStrategy(bt.Strategy):
                 self.order_target_size(data=d1, target=target_shares)
 
                 # 日志
-                self.log(f"买入SZ50: {target_shares}股, 价格: {price:.3f}, 金额: {target_shares * price:.2f}")
+                print(f"买入SZ50: {target_shares}股, 价格: {price:.3f}, 金额: {target_shares * price:.2f}")
 
                 # 更新当前持仓
                 self.current_etf = 'SZ50_ETF'
@@ -180,14 +180,14 @@ class ETFMomentumStrategy(bt.Strategy):
         elif (signal_cyb50 > self.params.min_signal_value) and (signal_cyb50 - signal_sz50 > self.params.min_signal_diff):
 
             if self.current_etf != 'CYB50_ETF':
-                self.log(
+                print(
                     f"买入条件触发 CYB50_ETF (CYB50:{signal_cyb50:.4f} > SZ50:{signal_sz50:.4f})"
                 )
 
                 # 先平掉其他持仓
                 if pos_sz > 0:
                     self.order_target_size(data=d1, target=0)
-                    self.log(f"卖出 {d1._name} {pos_sz} 份")
+                    print(f"卖出 {d1._name} {pos_sz} 份")
 
                 # 计算买入CYB50_ETF的数量
                 cash = self.broker.get_cash()
@@ -202,7 +202,7 @@ class ETFMomentumStrategy(bt.Strategy):
                 self.order_target_size(data=d2, target=target_shares)
 
                 # 日志
-                self.log(f"买入CYB50: {target_shares}股, 价格: {price:.3f}, 金额: {target_shares * price:.2f}")
+                print(f"买入CYB50: {target_shares}股, 价格: {price:.3f}, 金额: {target_shares * price:.2f}")
 
                 # 更新当前持仓
                 self.current_etf = 'CYB50_ETF'
