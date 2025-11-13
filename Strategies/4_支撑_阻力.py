@@ -53,6 +53,15 @@ def obtain_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
     df.set_index('date', inplace=True)
     return df
 
+code = ''
+CODE = '000400' # 许继电气
+START = '20150701'
+END = '20251031'
+CASH = 100_000 
+
+df = obtain_data(CODE, START, END)
+datafeed = bt.feeds.PandasData(dataname=df)
+cerebro.adddata(data=datafeed, name=CODE)
 
 # %%
 
@@ -64,16 +73,131 @@ class PivotPointIndicator(bt.Indicator):
     lines = ('pivot', 'resistance', 'support')
 
     def __init__(self): 
+        self.addminperiod(1) # 1 天, 因为是计算的昨天
 
-        self.lines.pivot = (self.data.high + self.data.low + self.data.close) / 3 # C 枢轴点
+    def next(self): 
 
-        self.lines.resistance = 2 * self.lines.pivot - self.data.low # R 阻力
-        
-        self.lines.support = 2 * self.lines.pivot - self.data.high # S 支撑
+        self.lines.pivot[0] = self.data.close[-1] + self.data.high[-1] + self.data.low[-1]
+
+        self.lines.resistance[0] = 2 * self.lines.pivot[0] - self.data.low[-1]
+
+        self.lines.support[0] = 2 * self.lines.pivot[0] - self.data.high[-1]
 
     
 
+# %%
+
+# 3. 策略
+
+class PivotPointStrategy(bt.Strategy): 
+
+    params = (
+        ('size_pct', 0.95), # 仓位默认95%
+    )
+
+    def __init__(self): 
+
+        # 获取 C, S, R 数据线
+        MyInd = PivotPointIndicator(self.data)
+        self.C, self.S, self.R = MyInd.lines.pivot, MyInd.lines.support, MyInd.lines.resistance
+
+        
+    def next(self): 
+
+        d = self.getdatabyname(CODE)
+
+        # 检查现有持仓
+        current_pos = self.getposition( self.getdatabyname(CODE) ).size
+
+        # 生成买入信号
+        if self.data.close[0] > self.C[0] and current_pos == 0 : 
+
+            # 计算最大持仓
+            cash = self.broker.get_cash()
+            price = self.data.close[0]
+            target_value = cash * self.params.size_pct
+            target_shares = target_value // price
+            target_shares = (target_shares // 100) * 100 # 100股为单位
+
+            self.order_target_size(data = d, target=target_shares)
+            
+            # 日志
+            print(f'买入 {CODE} {target_shares} 股')
+
+        elif self.data.close[0] >= self.R[0] and current_pos > 0 : 
+
+            self.order_target_size(data = d, target=0)
+
+            # 日志
+            print(f'平掉 {CODE} 多仓')
 
 
 
+cerebro.addstrategy(PivotPointStrategy)
 
+
+
+# %%
+
+# 4. 交易管理 
+
+## 滑点 百分比 0.0 因为资金量较小
+cerebro.broker.set_slippage_perc(0.0) 
+
+## 佣金 万三 + 最低 5 元（双向）
+cerebro.broker.setcommission( 
+    commission=0.0003, 
+    stocklike = True
+)
+
+
+## 成交模式: 日度回测默认 Bar 开盘成交
+cerebro.broker.set_coo(True)
+
+## 最大成交量
+# cerebro.broker.set_filler(
+#     bt.broker.fillers.FixedBarPerc(perc=0.001)
+# )
+
+# %%
+
+# 5. 分析器 
+
+cerebro.addanalyzer( 
+    bt.analyzers.SharpeRatio, 
+    _name = '_sharpe', 
+    riskfreerate=0.03 
+)
+
+cerebro.addanalyzer( 
+    bt.analyzers.DrawDown, 
+    _name = '_drawdown'
+)
+
+cerebro.addanalyzer( 
+    bt.analyzers.Returns, 
+    _name = '_returns'
+)
+
+
+# %%
+
+# 6. 运行
+
+result = cerebro.run()
+# 从返回的 result 中提取回测结果
+strat = result[0]
+
+# 结果
+print('--------------- Performance -----------------')
+print(f"最终市值: {cerebro.broker.getvalue():,.2f}")
+print(f"夏普比率: {strat.analyzers._sharpe.get_analysis().get('sharperatio', 'N/A')}")
+dd = strat.analyzers._drawdown.get_analysis()
+print(f"最大回撤: {dd.max.drawdown:.2f}%")
+ret = strat.analyzers._returns.get_analysis()
+print(f"总收益: {ret['rtot']*100:.2f}%")
+
+# %%
+
+# 画图（可选）
+cerebro.plot(style='line', barup='red', bardown='green', plotlinetrades=False)
