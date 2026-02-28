@@ -55,7 +55,7 @@ def obtain_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
 
 code = ''
 CODE = '000400' # 许继电气
-START = '20150701'
+START = '20220701'
 END = '20251031'
 CASH = 100_000 
 
@@ -77,7 +77,7 @@ class PivotPointIndicator(bt.Indicator):
 
     def next(self): 
 
-        self.lines.pivot[0] = self.data.close[-1] + self.data.high[-1] + self.data.low[-1]
+        self.lines.pivot[0] = ( self.data.close[-1] + self.data.high[-1] + self.data.low[-1] ) / 3
 
         self.lines.resistance[0] = 2 * self.lines.pivot[0] - self.data.low[-1]
 
@@ -93,6 +93,7 @@ class PivotPointStrategy(bt.Strategy):
 
     params = (
         ('size_pct', 0.95), # 仓位默认95%
+        ('min_price_move', 0.02),  # 最小价格变动2%才触发
     )
 
     def __init__(self): 
